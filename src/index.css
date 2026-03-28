@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #0f0f0f;
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Smooth screen transitions */
+.screen-enter {
+  animation: fadeIn 0.4s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Mermaid diagram styles */
+.mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #7c3aed;
+  border-radius: 3px;
+}
+
+/* Textarea */
+textarea {
+  resize: none;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #ffffff;
+  outline: none;
+  font-family: 'Inter', sans-serif;
+}
+textarea:focus {
+  border-color: #7c3aed;
+}
+
+/* Collapsible content */
+details summary {
+  cursor: pointer;
+  list-style: none;
+}
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Prose content styling */
+.transformed-content h1,
+.transformed-content h2,
+.transformed-content h3 {
+  color: #e2e8f0;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+}
+.transformed-content p {
+  line-height: 1.75;
+  margin-bottom: 0.875em;
+  color: #cbd5e1;
+}
+.transformed-content ul,
+.transformed-content ol {
+  padding-left: 1.5em;
+  margin-bottom: 0.875em;
+  color: #cbd5e1;
+}
+.transformed-content li {
+  margin-bottom: 0.375em;
+  line-height: 1.65;
+}
+.transformed-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+}
+.transformed-content th,
+.transformed-content td {
+  border: 1px solid #2a2a2a;
+  padding: 0.5em 0.75em;
+  color: #cbd5e1;
+  text-align: left;
+}
+.transformed-content th {
+  background: #1f1f2e;
+  color: #a78bfa;
+}
+.transformed-content strong {
+  color: #e2e8f0;
+}
