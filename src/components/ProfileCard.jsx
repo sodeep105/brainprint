@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 const TYPES = {
   spark: {
     name: 'The Spark',
@@ -51,9 +53,19 @@ const BADGE_LABELS = {
   processing_order: { example_first: '💡 Examples first', theory_first: '📐 Theory first' },
 }
 
+const ANALOGY_DOMAINS = [
+  { value: 'sports', label: '⚽ Sports' },
+  { value: 'cooking', label: '🍳 Cooking' },
+  { value: 'gaming', label: '🎮 Gaming' },
+  { value: 'music', label: '🎵 Music' },
+  { value: 'movies', label: '🎬 Movies' },
+  { value: 'travel', label: '✈️ Travel' },
+]
+
 export default function ProfileCard({ profile, onContinue }) {
   const typeKey = assignType(profile)
   const type = TYPES[typeKey]
+  const [analogyDomain, setAnalogyDomain] = useState(null)
 
   return (
     <div className="screen-enter min-h-screen flex flex-col items-center justify-center px-4 py-16 relative overflow-hidden">
@@ -97,6 +109,29 @@ export default function ProfileCard({ profile, onContinue }) {
             <Badge label={BADGE_LABELS.processing_order[profile.processing_order]} />
           </div>
 
+          {/* Analogy domain selector */}
+          <div className="mb-8">
+            <p className="text-xs text-slate-500 mb-3">
+              What's your world? We'll explain things through it.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {ANALOGY_DOMAINS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setAnalogyDomain(analogyDomain === value ? null : value)}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150"
+                  style={
+                    analogyDomain === value
+                      ? { background: '#6d28d9', borderColor: '#a855f7', color: '#fff' }
+                      : { background: 'transparent', borderColor: '#4b5563', color: '#9ca3af' }
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Share subtext */}
           <p className="text-xs text-slate-600 mb-8 tracking-wide">
             Share your type · #Brainprint
@@ -104,7 +139,7 @@ export default function ProfileCard({ profile, onContinue }) {
 
           {/* CTA */}
           <button
-            onClick={onContinue}
+            onClick={() => onContinue(analogyDomain)}
             className="group w-full py-4 rounded-2xl font-semibold text-base text-white transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-purple-900/30 relative overflow-hidden"
             style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #9f67ff 100%)' }}
           >

@@ -7,13 +7,15 @@ import Transformer from './components/Transformer.jsx'
 export default function App() {
   const [screen, setScreen] = useState('landing') // 'landing' | 'tasks' | 'profile' | 'transformer'
   const [profile, setProfile] = useState(null)
+  const [analogyDomain, setAnalogyDomain] = useState(null)
 
   function handleTasksComplete(profileData) {
     setProfile(profileData)
     setScreen('profile')
   }
 
-  function handleGoTransformer() {
+  function handleGoTransformer(domain) {
+    setAnalogyDomain(domain)
     setScreen('transformer')
   }
 
@@ -29,7 +31,7 @@ export default function App() {
         <ProfileCard profile={profile} onContinue={handleGoTransformer} />
       )}
       {screen === 'transformer' && profile && (
-        <Transformer profile={profile} onBack={() => setScreen('profile')} />
+        <Transformer profile={profile} analogyDomain={analogyDomain} onBack={() => setScreen('profile')} />
       )}
     </div>
   )

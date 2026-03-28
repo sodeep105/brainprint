@@ -106,7 +106,7 @@ function ScoreBar({ score, warning, reason }) {
   )
 }
 
-export default function Transformer({ profile, onBack }) {
+export default function Transformer({ profile, analogyDomain, onBack }) {
   const typeKey = assignTypeKey(profile)
   const [input, setInput] = useState('')
   const [status, setStatus] = useState('idle') // 'idle' | 'scoring' | 'transforming' | 'done' | 'error'
@@ -115,6 +115,31 @@ export default function Transformer({ profile, onBack }) {
   const [diagramCode, setDiagramCode] = useState('')
   const [error, setError] = useState('')
   const [view, setView] = useState('transformed') // 'original' | 'transformed'
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const fileInputRef = useRef(null)
+
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPdfLoading(true)
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      const pages = []
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        pages.push(content.items.map(item => item.str).join(' '))
+      }
+      setInput(pages.join('\n\n'))
+    } catch (err) {
+      setError(`PDF error: ${err.message}`)
+    } finally {
+      setPdfLoading(false)
+      // reset so the same file can be re-uploaded if needed
+      e.target.value = ''
+    }
+  }
 
   async function handleTransform() {
     if (!input.trim()) return
@@ -143,6 +168,9 @@ export default function Transformer({ profile, onBack }) {
       setStatus('transforming')
 
       // Step 2: Transform
+      const analogyInstruction = analogyDomain
+        ? `- Use analogies exclusively from the ${analogyDomain} domain when explaining any concept. Make the analogy feel natural, not forced.`
+        : ''
       const systemPrompt = `You are a cognitive style adapter. Transform the following content based on this learner profile: ${JSON.stringify(profile)}.
 
 Rules:
@@ -151,7 +179,7 @@ Rules:
 - If processing_order is "example_first": always lead with a concrete example before any explanation
 - If processing_order is "theory_first": lead with the concept, then examples
 - If overwhelm_threshold is "low": break into very small chunks, hide secondary info using HTML <details><summary>Show more</summary>...</details> tags
-- If overwhelm_threshold is "high": you can be comprehensive and detailed
+- If overwhelm_threshold is "high": you can be comprehensive and detailed${analogyInstruction ? '\n' + analogyInstruction : ''}
 
 If you include a [DIAGRAM: ...] tag, make the description detailed enough to render as a Mermaid flowchart.
 Return only the transformed content — no preamble, no meta-commentary.`
@@ -208,6 +236,26 @@ Return only the transformed content — no preamble, no meta-commentary.`
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Paste Content</h3>
             <span className="text-xs text-slate-600">{input.length} chars</span>
           </div>
+
+          {/* PDF upload row */}
+          <div className="flex items-center gap-3 mb-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={pdfLoading}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border border-[#7c3aed]/50 text-[#a78bfa] bg-[#1f1a2e] hover:bg-[#2a1f3d] hover:border-[#7c3aed] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {pdfLoading ? '⏳ Reading PDF…' : '📄 Upload PDF'}
+            </button>
+            <span className="text-xs text-slate-600">or paste text below</span>
+          </div>
+
           <textarea
             className="flex-1 min-h-[300px] p-4 rounded-xl text-sm leading-relaxed text-slate-300 bg-[#1a1a1a] border border-[#2a2a2a] focus:border-[#7c3aed] transition-colors outline-none resize-none"
             placeholder="Paste any content here — an article, lecture notes, documentation, a research paper…"
@@ -289,6 +337,7 @@ Return only the transformed content — no preamble, no meta-commentary.`
                       <MermaidDiagram code={diagramCode} />
                     </div>
                   )}
+                  <VisualSummary transformedText={displayTransformed} learnerType={TYPE_NAMES[typeKey]} />
                 </>
               ) : (
                 <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">{input}</p>
@@ -305,6 +354,33 @@ Return only the transformed content — no preamble, no meta-commentary.`
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ── Visual Summary via Pollinations.ai ────────────────────── */
+function VisualSummary({ transformedText, learnerType }) {
+  const [imgStatus, setImgStatus] = useState('loading') // 'loading' | 'ready' | 'error'
+
+  const snippet = transformedText.replace(/[#*\[\]`]/g, '').trim().slice(0, 80)
+  const prompt = `A clean, minimal educational diagram representing: ${snippet}. Style: ${learnerType} cognitive style, dark background, purple accents`
+  const src = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=400&nologo=true`
+
+  if (imgStatus === 'error') return null
+
+  return (
+    <div className="mt-4">
+      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🎨 Visual Summary</p>
+      {imgStatus === 'loading' && (
+        <div className="w-full h-[200px] rounded-xl bg-[#1a1a1a] animate-pulse" />
+      )}
+      <img
+        src={src}
+        alt="Visual summary"
+        className={`w-full rounded-xl transition-opacity duration-300 ${imgStatus === 'ready' ? 'opacity-100' : 'opacity-0 h-0'}`}
+        onLoad={() => setImgStatus('ready')}
+        onError={() => setImgStatus('error')}
+      />
     </div>
   )
 }
