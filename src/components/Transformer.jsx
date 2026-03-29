@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import mermaid from 'mermaid'
+import ThemeToggle from './ThemeToggle.jsx'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend,
@@ -256,35 +257,46 @@ Return only the transformed content — no preamble, no meta-commentary.`
       // Visual-only enrichment — all 3 calls fire in parallel after text renders
       if (profile.modality === 'visual') {
         const cleanText = transformedRaw.replace(/\[DIAGRAM:[\s\S]*?\]/gi, '').replace(/[#*\[\]`]/g, '').trim()
+        const truncatedText = cleanText.slice(0, 1500)
         setConceptMapCode('loading')
         setConceptsData('loading')
         setSegmentsData('loading')
 
+        const parseJson = (raw) => {
+          const cleaned = raw.replace(/```json?/gi, '').replace(/```/g, '').trim()
+          const match = cleaned.match(/\{[\s\S]*\}/)
+          if (!match) return null
+          return JSON.parse(match[0])
+        }
+
         Promise.all([
           groqCall(
             'You are a diagram generator. Return ONLY valid mermaid flowchart syntax, no backticks, no explanation.',
-            `Create a mermaid.js flowchart LR showing the key concepts from this text and how they relate to each other. Max 8 nodes. Node labels max 3 words. Use these shapes: rectangles for main concepts, rounded rectangles for supporting ideas.\nText: ${cleanText}`
+            `Create a mermaid.js flowchart LR showing the key concepts from this text and how they relate to each other. Max 8 nodes. Node labels max 3 words. Use these shapes: rectangles for main concepts, rounded rectangles for supporting ideas.\nText: ${truncatedText}`
           ).then(code => {
+            console.log('conceptmap raw:', code)
             setConceptMapCode(code.replace(/```mermaid?/gi, '').replace(/```/g, '').trim())
           }).catch(() => setConceptMapCode(null)),
 
           groqCall(
             'Return JSON only, no markdown, no backticks.',
-            `Extract the 5-7 most important concepts from this text. For each give an importance score 1-10 based on how central it is to understanding the content. Return: { "concepts": [{"name": "string (max 3 words)", "score": number}] }\nText: ${cleanText}`
+            `Extract the 5-7 most important concepts from this text. For each give an importance score 1-10 based on how central it is to understanding the content. Return: { "concepts": [{"name": "string (max 3 words)", "score": number}] }\nText: ${truncatedText}`
           ).then(raw => {
+            console.log('concepts raw:', raw)
             try {
-              const parsed = JSON.parse(raw.replace(/```json?/gi, '').replace(/```/g, '').trim())
-              setConceptsData(parsed.concepts ?? [])
+              const parsed = parseJson(raw)
+              setConceptsData(parsed?.concepts ?? [])
             } catch { setConceptsData([]) }
           }).catch(() => setConceptsData([])),
 
           groqCall(
             'Return JSON only, no markdown, no backticks.',
-            `Analyze this text and break it into its main structural components with percentage of content dedicated to each. Examples: Background, Core Concept, Evidence, Examples, Implications, Methodology — use whatever fits this specific text. Return: { "segments": [{"label": "string", "percentage": number}] } Percentages must sum to 100.\nText: ${cleanText}`
+            `Analyze this text and break it into its main structural components with percentage of content dedicated to each. Examples: Background, Core Concept, Evidence, Examples, Implications, Methodology — use whatever fits this specific text. Return: { "segments": [{"label": "string", "percentage": number}] } Percentages must sum to 100.\nText: ${truncatedText}`
           ).then(raw => {
+            console.log('segments raw:', raw)
             try {
-              const parsed = JSON.parse(raw.replace(/```json?/gi, '').replace(/```/g, '').trim())
-              setSegmentsData(parsed.segments ?? [])
+              const parsed = parseJson(raw)
+              setSegmentsData(parsed?.segments ?? [])
             } catch { setSegmentsData([]) }
           }).catch(() => setSegmentsData([])),
         ])
@@ -311,7 +323,7 @@ Return only the transformed content — no preamble, no meta-commentary.`
           <span className="text-base">{TYPE_ICONS[typeKey]}</span>
           <span className="text-xs text-slate-400 font-medium">{TYPE_NAMES[typeKey]}</span>
         </div>
-        <div className="w-16" />
+        <ThemeToggle />
       </div>
 
       {/* Main layout */}
@@ -423,12 +435,11 @@ Return only the transformed content — no preamble, no meta-commentary.`
                 <>
                   <KeyTakeaways takeaways={takeaways} learnerType={TYPE_NAMES[typeKey]} />
 
-                  {/* Badge row + dyslexia toggle */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <WordCountBadge original={input} transformed={displayTransformed} />
+                  {/* Dyslexia toggle — full-width row */}
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => setDyslexiaMode(m => !m)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-all border ${
+                      className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
                         dyslexiaMode
                           ? 'border-green-500 text-green-400 bg-green-950'
                           : 'border-gray-600 text-gray-400 bg-transparent'
@@ -436,16 +447,18 @@ Return only the transformed content — no preamble, no meta-commentary.`
                     >
                       {dyslexiaMode ? '✓ Dyslexia Mode Active' : '🔡 Dyslexia-Friendly Mode'}
                     </button>
-                    {/* Tooltip */}
-                    <div className="relative group">
+                    <div className="relative group shrink-0">
                       <span className="text-gray-500 text-sm cursor-default select-none">ⓘ</span>
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-xs text-gray-300 leading-relaxed pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <div className="absolute bottom-full right-0 mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-xs text-gray-300 leading-relaxed pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         Optimized typography for dyslexic readers: OpenDyslexic font, wider spacing, shorter lines, line focus mode
                       </div>
                     </div>
                   </div>
 
-                  <DyslexiaContent html={markdownToHtml(displayTransformed)} dyslexiaMode={dyslexiaMode} />
+                  {/* Word count badge row */}
+                  <WordCountBadge original={input} transformed={displayTransformed} />
+
+                  <DyslexiaContent html={markdownToHtml(displayTransformed)} rawText={displayTransformed} dyslexiaMode={dyslexiaMode} />
                   {diagramCode && (
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">Generated Diagram</p>
@@ -543,7 +556,7 @@ function VisualCharts({ conceptMapCode, conceptsData, segmentsData }) {
     <div className="space-y-6">
 
       {/* 1 — Concept Map */}
-      {conceptMapCode && (
+      {conceptMapCode !== null && (
         <div className="mb-6">
           <p className="text-sm text-gray-400 mb-2">🗺️ Concept Map</p>
           {conceptMapCode === 'loading'
@@ -554,55 +567,51 @@ function VisualCharts({ conceptMapCode, conceptsData, segmentsData }) {
       )}
 
       {/* 2 — Concept Importance Bar Chart */}
-      {conceptsData && conceptsData.length > 0 && (
+      {conceptsData !== null && (
         <div className="mb-6">
           <p className="text-sm text-gray-400 mb-2">📊 Concept Importance</p>
-          <div className="bg-gray-900 rounded-xl p-4">
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={conceptsData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                <XAxis type="number" domain={[0, 10]} stroke="#6b7280" tick={{ fill: '#6b7280' }} />
-                <YAxis type="category" dataKey="name" stroke="#6b7280" tick={{ fill: '#d1d5db' }} width={100} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #7c3aed' }} labelStyle={{ color: '#d1d5db' }} />
-                <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-                  {conceptsData.map((entry, index) => (
-                    <Cell key={index} fill={entry.score >= 8 ? '#7c3aed' : entry.score >= 5 ? '#a78bfa' : '#4c1d95'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-      {conceptsData === 'loading' && (
-        <div className="mb-6">
-          <p className="text-sm text-gray-400 mb-2">📊 Concept Importance</p>
-          <div className="w-full h-[250px] rounded-xl bg-gray-900 animate-pulse" />
+          {conceptsData === 'loading' ? (
+            <div className="w-full h-[250px] rounded-xl bg-gray-900 animate-pulse" />
+          ) : conceptsData.length > 0 ? (
+            <div className="bg-gray-900 rounded-xl p-4">
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={conceptsData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <XAxis type="number" domain={[0, 10]} stroke="#6b7280" tick={{ fill: '#6b7280' }} />
+                  <YAxis type="category" dataKey="name" stroke="#6b7280" tick={{ fill: '#d1d5db' }} width={100} />
+                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #7c3aed' }} labelStyle={{ color: '#d1d5db' }} />
+                  <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+                    {conceptsData.map((entry, index) => (
+                      <Cell key={index} fill={entry.score >= 8 ? '#7c3aed' : entry.score >= 5 ? '#a78bfa' : '#4c1d95'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : null}
         </div>
       )}
 
       {/* 3 — Content Structure Pie Chart */}
-      {segmentsData && segmentsData.length > 0 && (
+      {segmentsData !== null && (
         <div className="mb-6">
           <p className="text-sm text-gray-400 mb-2">🥧 Content Breakdown</p>
-          <div className="bg-gray-900 rounded-xl p-4">
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={segmentsData} dataKey="percentage" nameKey="label" cx="50%" cy="50%" outerRadius={100} innerRadius={50} paddingAngle={3}>
-                  {segmentsData.map((_, index) => (
-                    <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `${value}%`} contentStyle={{ background: '#1a1a1a', border: '1px solid #7c3aed' }} />
-                <Legend wrapperStyle={{ color: '#d1d5db', fontSize: '12px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-      {segmentsData === 'loading' && (
-        <div className="mb-6">
-          <p className="text-sm text-gray-400 mb-2">🥧 Content Breakdown</p>
-          <div className="w-full h-[280px] rounded-xl bg-gray-900 animate-pulse" />
+          {segmentsData === 'loading' ? (
+            <div className="w-full h-[280px] rounded-xl bg-gray-900 animate-pulse" />
+          ) : segmentsData.length > 0 ? (
+            <div className="bg-gray-900 rounded-xl p-4">
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={segmentsData} dataKey="percentage" nameKey="label" cx="50%" cy="50%" outerRadius={100} innerRadius={50} paddingAngle={3}>
+                    {segmentsData.map((_, index) => (
+                      <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `${value}%`} contentStyle={{ background: '#1a1a1a', border: '1px solid #7c3aed' }} />
+                  <Legend wrapperStyle={{ color: '#d1d5db', fontSize: '12px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -611,7 +620,7 @@ function VisualCharts({ conceptMapCode, conceptsData, segmentsData }) {
 }
 
 /* ── Dyslexia-friendly content renderer ─────────────────────── */
-function DyslexiaContent({ html, dyslexiaMode }) {
+function DyslexiaContent({ html, rawText, dyslexiaMode }) {
   const [hoveredIdx, setHoveredIdx] = useState(null)
 
   if (!dyslexiaMode) {
@@ -623,12 +632,14 @@ function DyslexiaContent({ html, dyslexiaMode }) {
     )
   }
 
-  // Chunk plain text into ≤3-sentence paragraphs
-  const plainText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  const sentences = plainText.split(/(?<=\.)\s+/)
+  // Chunk raw markdown paragraphs into ≤3-sentence groups
+  const paragraphs = rawText.split(/\n\n+/).filter(Boolean)
   const chunks = []
-  for (let i = 0; i < sentences.length; i += 3) {
-    chunks.push(sentences.slice(i, i + 3).join(' '))
+  for (const para of paragraphs) {
+    const sentences = para.split(/(?<=\.)\s+/)
+    for (let i = 0; i < sentences.length; i += 3) {
+      chunks.push(sentences.slice(i, i + 3).join(' '))
+    }
   }
 
   return (

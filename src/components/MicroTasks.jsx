@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import ThemeToggle from './ThemeToggle.jsx'
 
 const QUANTUM_TEXT = `The phenomenon of quantum decoherence presents a fundamental challenge to
 the superposition principle as described by the Schrödinger equation: when a quantum system
@@ -50,6 +51,7 @@ export default function MicroTasks({ onComplete }) {
 
   return (
     <div className="screen-enter min-h-screen flex flex-col items-center justify-center px-4 py-12">
+      <div className="absolute top-4 right-4 z-50"><ThemeToggle /></div>
       {/* Progress bar */}
       <div className="w-full max-w-2xl mb-8">
         <div className="flex justify-between items-center mb-2">

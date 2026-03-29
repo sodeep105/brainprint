@@ -1,6 +1,9 @@
+import ThemeToggle from './ThemeToggle.jsx'
+
 export default function Landing({ onStart }) {
   return (
     <div className="screen-enter min-h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      <div className="fixed top-4 right-4 z-50"><ThemeToggle /></div>
       {/* Background glow */}
       <div
         className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full pointer-events-none"

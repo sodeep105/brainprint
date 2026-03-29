@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import html2canvas from 'html2canvas'
+import ThemeToggle from './ThemeToggle.jsx'
 
 const TYPES = {
   spark: {
@@ -122,6 +123,7 @@ export default function ProfileCard({ profile, onContinue, onRetake }) {
 
   return (
     <div className="screen-enter min-h-screen flex flex-col items-center justify-center px-4 py-16 relative overflow-hidden">
+      <div className="absolute top-4 right-4 z-50"><ThemeToggle /></div>
       {/* Background glow */}
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full pointer-events-none"
