@@ -77,31 +77,51 @@ function MermaidDiagram({ code }) {
 }
 
 function ScoreBar({ score, warning, reason }) {
-  const pct = (score / 10) * 100
-  const color = score <= 4 ? '#22c55e' : score <= 6 ? '#eab308' : '#ef4444'
-  const label = score <= 3 ? 'Simple' : score <= 5 ? 'Moderate' : score <= 7 ? 'Complex' : 'Dense'
+  const [displayPct, setDisplayPct] = useState(0)
+  const [displayScore, setDisplayScore] = useState(0)
+  const animatedRef = useRef(false)
+
+  const targetPct = (score / 10) * 100
+  const color = score <= 3 ? '#22c55e' : score <= 6 ? '#eab308' : '#ef4444'
+  const label = score <= 3 ? 'Easy' : score <= 6 ? 'Moderate' : 'Dense'
+
+  useEffect(() => {
+    if (animatedRef.current) return
+    animatedRef.current = true
+    const duration = 1200
+    const start = performance.now()
+    function frame(now) {
+      const t = Math.min((now - start) / duration, 1)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setDisplayPct(eased * targetPct)
+      setDisplayScore(Math.round(eased * score))
+      if (t < 1) requestAnimationFrame(frame)
+    }
+    requestAnimationFrame(frame)
+  }, [])
 
   return (
     <div className="p-4 rounded-2xl border bg-[#1a1a1a] mb-4"
       style={{ borderColor: warning ? 'rgba(239,68,68,0.3)' : '#2a2a2a' }}>
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cognitive Load</span>
-          {warning && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-red-950 text-red-400 border border-red-900/40 font-medium">
-              ⚠ Dense content
-            </span>
-          )}
-        </div>
-        <span className="text-sm font-bold" style={{ color }}>{score}/10 · {label}</span>
+        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cognitive Load Score</span>
+        <span className="text-sm font-bold tabular-nums" style={{ color }}>{displayScore}/10</span>
       </div>
-      <div className="h-2 bg-[#0f0f0f] rounded-full overflow-hidden mb-2">
+      <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden mb-1.5">
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{ width: `${pct}%`, background: color }}
+          className="h-full rounded-full"
+          style={{ width: `${displayPct}%`, background: color, transition: 'none' }}
         />
       </div>
-      {reason && <p className="text-xs text-slate-500 leading-relaxed">{reason}</p>}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium" style={{ color }}>{label}</span>
+        {reason && <p className="text-xs text-slate-500 leading-relaxed text-right max-w-[70%]">{reason}</p>}
+      </div>
+      {warning && (
+        <p className="mt-2 text-xs text-yellow-400">
+          ⚠️ This is dense content. We've adapted it for your brain type.
+        </p>
+      )}
     </div>
   )
 }
@@ -116,6 +136,9 @@ export default function Transformer({ profile, analogyDomain, onBack }) {
   const [error, setError] = useState('')
   const [view, setView] = useState('transformed') // 'original' | 'transformed'
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [takeaways, setTakeaways] = useState(null) // null | 'loading' | string[]
+  const [conceptMapCode, setConceptMapCode] = useState(null) // null | 'loading' | string
+  const [visualImgUrl, setVisualImgUrl] = useState(null)
   const fileInputRef = useRef(null)
 
   async function handleFileUpload(e) {
@@ -147,6 +170,9 @@ export default function Transformer({ profile, analogyDomain, onBack }) {
     setScore(null)
     setTransformed('')
     setDiagramCode('')
+    setTakeaways('loading')
+    setConceptMapCode(null)
+    setVisualImgUrl(null)
     setError('')
     setView('transformed')
 
@@ -184,8 +210,19 @@ Rules:
 If you include a [DIAGRAM: ...] tag, make the description detailed enough to render as a Mermaid flowchart.
 Return only the transformed content — no preamble, no meta-commentary.`
 
-      const transformedRaw = await groqCall(systemPrompt, input)
+      // Step 2b: Transform + takeaways in parallel
+      const takeawaysPrompt = `Extract exactly 3 key takeaways from this content that are most important for a ${TYPE_NAMES[typeKey]} learner. Return JSON only, no markdown, no backticks: { "takeaways": ["string", "string", "string"] } Each takeaway max 15 words. Be specific, not generic.`
+      const [transformedRaw, takeawaysRaw] = await Promise.all([
+        groqCall(systemPrompt, input),
+        groqCall('You are a precise summarizer.', takeawaysPrompt + '\n\nContent:\n' + input),
+      ])
       setTransformed(transformedRaw)
+      try {
+        const parsed = JSON.parse(takeawaysRaw.replace(/```json?/gi, '').replace(/```/g, '').trim())
+        setTakeaways(parsed.takeaways ?? [])
+      } catch {
+        setTakeaways([])
+      }
 
       // Step 3: Extract and render diagram if present
       const diagramMatch = transformedRaw.match(/\[DIAGRAM:\s*([\s\S]*?)\]/i)
@@ -203,6 +240,23 @@ Return only the transformed content — no preamble, no meta-commentary.`
       }
 
       setStatus('done')
+
+      // Visual-only enrichment — runs after text is shown, in parallel
+      if (profile.modality === 'visual') {
+        const cleanText = transformedRaw.replace(/\[DIAGRAM:[\s\S]*?\]/gi, '').replace(/[#*\[\]`]/g, '').trim()
+        const imgSnippet = cleanText.slice(0, 60)
+        const imgPrompt = `Clean minimal educational infographic about: ${imgSnippet}. Flat design, dark background #0f0f0f, purple accent color, no text overlays, simple icons`
+        setVisualImgUrl(`https://image.pollinations.ai/prompt/${encodeURIComponent(imgPrompt)}?width=800&height=350&nologo=true`)
+        setConceptMapCode('loading')
+        groqCall(
+          'You are a diagram generator.',
+          `Convert the key concepts and their relationships from this content into a Mermaid.js flowchart. Use LR direction. Max 8 nodes. Keep labels short (under 4 words). Return ONLY valid mermaid syntax starting with 'flowchart LR', nothing else, no backticks, no explanation:\n${cleanText}`
+        ).then(code => {
+          setConceptMapCode(code.replace(/```mermaid?/gi, '').replace(/```/g, '').trim())
+        }).catch(() => {
+          setConceptMapCode(null) // hide silently on failure
+        })
+      }
     } catch (e) {
       setError(e.message)
       setStatus('error')
@@ -310,15 +364,23 @@ Return only the transformed content — no preamble, no meta-commentary.`
             </div>
           )}
 
-          {/* Loading shimmer */}
+          {/* Loading state */}
           {(status === 'scoring' || status === 'transforming') && (
-            <div className="space-y-3 animate-pulse">
-              <div className="h-4 bg-[#1a1a1a] rounded-full w-3/4" />
-              <div className="h-4 bg-[#1a1a1a] rounded-full" />
-              <div className="h-4 bg-[#1a1a1a] rounded-full w-5/6" />
-              <div className="h-4 bg-[#1a1a1a] rounded-full w-2/3" />
-              <div className="h-4 bg-[#1a1a1a] rounded-full" />
-              <div className="h-4 bg-[#1a1a1a] rounded-full w-4/5" />
+            <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
+              <p className="text-base font-medium text-slate-300">
+                {
+                  { spark: '⚡ Cutting the fluff...', architect: '🏛️ Building your structure...', mapper: '🗺️ Drawing your map...', storyteller: '📖 Finding your narrative...' }[typeKey]
+                }
+              </p>
+              <div className="flex gap-2">
+                {[0, 1, 2].map(i => (
+                  <div
+                    key={i}
+                    className="w-2 h-2 rounded-full bg-[#7c3aed]"
+                    style={{ animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
@@ -327,6 +389,8 @@ Return only the transformed content — no preamble, no meta-commentary.`
             <div className="flex-1 overflow-y-auto space-y-4">
               {view === 'transformed' ? (
                 <>
+                  <KeyTakeaways takeaways={takeaways} learnerType={TYPE_NAMES[typeKey]} />
+                  <WordCountBadge original={input} transformed={displayTransformed} />
                   <div
                     className="transformed-content text-sm"
                     dangerouslySetInnerHTML={{ __html: markdownToHtml(displayTransformed) }}
@@ -337,7 +401,12 @@ Return only the transformed content — no preamble, no meta-commentary.`
                       <MermaidDiagram code={diagramCode} />
                     </div>
                   )}
-                  <VisualSummary transformedText={displayTransformed} learnerType={TYPE_NAMES[typeKey]} />
+                  {profile.modality === 'visual' && (
+                    <>
+                      <ConceptMap code={conceptMapCode} />
+                      <VisualImageSection url={visualImgUrl} />
+                    </>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">{input}</p>
@@ -358,24 +427,95 @@ Return only the transformed content — no preamble, no meta-commentary.`
   )
 }
 
-/* ── Visual Summary via Pollinations.ai ────────────────────── */
-function VisualSummary({ transformedText, learnerType }) {
-  const [imgStatus, setImgStatus] = useState('loading') // 'loading' | 'ready' | 'error'
+/* ── Key Takeaways ──────────────────────────────────────────── */
+function KeyTakeaways({ takeaways, learnerType }) {
+  if (!takeaways) return null
 
-  const snippet = transformedText.replace(/[#*\[\]`]/g, '').trim().slice(0, 80)
-  const prompt = `A clean, minimal educational diagram representing: ${snippet}. Style: ${learnerType} cognitive style, dark background, purple accents`
-  const src = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=400&nologo=true`
+  if (takeaways === 'loading') return (
+    <div className="p-4 rounded-xl border border-purple-800 bg-purple-950/40 space-y-2 animate-pulse">
+      <div className="h-3 bg-purple-900/60 rounded-full w-1/2" />
+      <div className="h-3 bg-purple-900/60 rounded-full w-5/6" />
+      <div className="h-3 bg-purple-900/60 rounded-full w-3/4" />
+      <div className="h-3 bg-purple-900/60 rounded-full w-4/5" />
+    </div>
+  )
 
-  if (imgStatus === 'error') return null
+  if (!takeaways.length) return null
 
   return (
-    <div className="mt-4">
+    <div className="p-4 rounded-xl border border-purple-800 bg-purple-950/40">
+      <p className="text-xs font-semibold text-purple-400 mb-3">
+        💡 Key Takeaways for {learnerType}
+      </p>
+      <ol className="space-y-2">
+        {takeaways.map((t, i) => (
+          <li key={i} className="flex gap-2 text-sm text-gray-200">
+            <span className="text-purple-500 font-bold shrink-0">{i + 1}.</span>
+            <span>{t}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/* ── Word Count Reduction Badge ────────────────────────────── */
+function WordCountBadge({ original, transformed }) {
+  const countWords = str => str.trim().split(/\s+/).filter(Boolean).length
+  const originalCount = countWords(original)
+  const transformedCount = countWords(transformed)
+  const reduction = Math.round((1 - transformedCount / originalCount) * 100)
+  const reduced = reduction > 0
+
+  return (
+    <div
+      className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium"
+      style={reduced
+        ? { background: 'rgba(20,83,45,0.5)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }
+        : { background: 'rgba(76,29,149,0.4)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.2)' }
+      }
+    >
+      {reduced
+        ? `🧠 Cognitive load reduced by ${reduction}% · ${originalCount} → ${transformedCount} words`
+        : `🧠 Content expanded for your learning style · ${originalCount} → ${transformedCount} words`
+      }
+    </div>
+  )
+}
+
+/* ── Visual-only: Concept Map ───────────────────────────────── */
+function ConceptMap({ code }) {
+  if (!code) return null
+
+  if (code === 'loading') return (
+    <div>
+      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🗺️ Concept Map</p>
+      <div className="w-full h-[180px] rounded-xl bg-[#1a1a1a] animate-pulse" />
+    </div>
+  )
+
+  return (
+    <div>
+      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🗺️ Concept Map</p>
+      <MermaidDiagram code={code} />
+    </div>
+  )
+}
+
+/* ── Visual-only: Pollinations image ────────────────────────── */
+function VisualImageSection({ url }) {
+  const [imgStatus, setImgStatus] = useState('loading') // 'loading' | 'ready' | 'error'
+
+  if (!url || imgStatus === 'error') return null
+
+  return (
+    <div>
       <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🎨 Visual Summary</p>
       {imgStatus === 'loading' && (
         <div className="w-full h-[200px] rounded-xl bg-[#1a1a1a] animate-pulse" />
       )}
       <img
-        src={src}
+        src={url}
         alt="Visual summary"
         className={`w-full rounded-xl transition-opacity duration-300 ${imgStatus === 'ready' ? 'opacity-100' : 'opacity-0 h-0'}`}
         onLoad={() => setImgStatus('ready')}

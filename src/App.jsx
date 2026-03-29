@@ -19,6 +19,12 @@ export default function App() {
     setScreen('transformer')
   }
 
+  function handleRetake() {
+    setProfile(null)
+    setAnalogyDomain(null)
+    setScreen('tasks')
+  }
+
   return (
     <div className="min-h-screen bg-[#0f0f0f] text-white font-sans">
       {screen === 'landing' && (
@@ -28,7 +34,7 @@ export default function App() {
         <MicroTasks onComplete={handleTasksComplete} />
       )}
       {screen === 'profile' && profile && (
-        <ProfileCard profile={profile} onContinue={handleGoTransformer} />
+        <ProfileCard profile={profile} onContinue={handleGoTransformer} onRetake={handleRetake} />
       )}
       {screen === 'transformer' && profile && (
         <Transformer profile={profile} analogyDomain={analogyDomain} onBack={() => setScreen('profile')} />
