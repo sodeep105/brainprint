@@ -46,6 +46,12 @@ async function groqCall(systemPrompt, userContent) {
 
 mermaid.initialize({ startOnLoad: false, theme: 'dark', themeVariables: { darkMode: true, background: '#1a1a1a', primaryColor: '#7c3aed', primaryTextColor: '#e2e8f0', lineColor: '#7c3aed', secondaryColor: '#1f1a2e', tertiaryColor: '#0f0f0f' } })
 
+const generateImageUrl = (text, learnerType) => {
+  const cleanText = text.replace(/[^\w\s]/g, '').slice(0, 60).trim()
+  const prompt = `Educational infographic about ${cleanText}, ${learnerType} learning style, flat design, dark background, purple accents, minimal, no text`
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=350&nologo=true&seed=${Date.now()}`
+}
+
 function MermaidDiagram({ code }) {
   const ref = useRef(null)
   const [error, setError] = useState(null)
@@ -138,7 +144,6 @@ export default function Transformer({ profile, analogyDomain, onBack }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [takeaways, setTakeaways] = useState(null) // null | 'loading' | string[]
   const [conceptMapCode, setConceptMapCode] = useState(null) // null | 'loading' | string
-  const [visualImgUrl, setVisualImgUrl] = useState(null)
   const fileInputRef = useRef(null)
 
   async function handleFileUpload(e) {
@@ -172,7 +177,6 @@ export default function Transformer({ profile, analogyDomain, onBack }) {
     setDiagramCode('')
     setTakeaways('loading')
     setConceptMapCode(null)
-    setVisualImgUrl(null)
     setError('')
     setView('transformed')
 
@@ -244,9 +248,6 @@ Return only the transformed content — no preamble, no meta-commentary.`
       // Visual-only enrichment — runs after text is shown, in parallel
       if (profile.modality === 'visual') {
         const cleanText = transformedRaw.replace(/\[DIAGRAM:[\s\S]*?\]/gi, '').replace(/[#*\[\]`]/g, '').trim()
-        const imgSnippet = cleanText.slice(0, 60)
-        const imgPrompt = `Clean minimal educational infographic about: ${imgSnippet}. Flat design, dark background #0f0f0f, purple accent color, no text overlays, simple icons`
-        setVisualImgUrl(`https://image.pollinations.ai/prompt/${encodeURIComponent(imgPrompt)}?width=800&height=350&nologo=true`)
         setConceptMapCode('loading')
         groqCall(
           'You are a diagram generator.',
@@ -404,7 +405,7 @@ Return only the transformed content — no preamble, no meta-commentary.`
                   {profile.modality === 'visual' && (
                     <>
                       <ConceptMap code={conceptMapCode} />
-                      <VisualImageSection url={visualImgUrl} />
+                      <VisualImageSection transformedText={displayTransformed} learnerType={TYPE_NAMES[typeKey]} />
                     </>
                   )}
                 </>
@@ -503,24 +504,52 @@ function ConceptMap({ code }) {
 }
 
 /* ── Visual-only: Pollinations image ────────────────────────── */
-function VisualImageSection({ url }) {
-  const [imgStatus, setImgStatus] = useState('loading') // 'loading' | 'ready' | 'error'
+function VisualImageSection({ transformedText, learnerType }) {
+  const [imageUrl, setImageUrl] = useState(null)
+  const [imageLoading, setImageLoading] = useState(false)
+  const [imageError, setImageError] = useState(false)
 
-  if (!url || imgStatus === 'error') return null
+  useEffect(() => {
+    if (transformedText && transformedText.length > 0) {
+      setImageLoading(true)
+      setImageError(false)
+      setImageUrl(generateImageUrl(transformedText, learnerType))
+    }
+  }, [transformedText])
+
+  function handleRegenerate() {
+    setImageLoading(true)
+    setImageError(false)
+    setImageUrl(generateImageUrl(transformedText, learnerType) + '&seed=' + Date.now())
+  }
+
+  if (!transformedText) return null
 
   return (
     <div>
       <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🎨 Visual Summary</p>
-      {imgStatus === 'loading' && (
-        <div className="w-full h-[200px] rounded-xl bg-[#1a1a1a] animate-pulse" />
+      {imageLoading && !imageError && (
+        <div className="w-full h-48 bg-gray-800 rounded-xl animate-pulse flex items-center justify-center">
+          <span className="text-gray-500 text-sm">🎨 Generating visual summary...</span>
+        </div>
       )}
-      <img
-        src={url}
-        alt="Visual summary"
-        className={`w-full rounded-xl transition-opacity duration-300 ${imgStatus === 'ready' ? 'opacity-100' : 'opacity-0 h-0'}`}
-        onLoad={() => setImgStatus('ready')}
-        onError={() => setImgStatus('error')}
-      />
+      {imageUrl && !imageError && (
+        <div>
+          <img
+            src={imageUrl}
+            alt="Visual summary"
+            className="rounded-xl w-full"
+            onLoad={() => setImageLoading(false)}
+            onError={() => { setImageError(true); setImageLoading(false) }}
+          />
+          <button
+            onClick={handleRegenerate}
+            className="mt-2 px-3 py-1.5 rounded-lg text-sm text-purple-400 border border-purple-600 hover:bg-purple-950 transition-colors"
+          >
+            🔄 Regenerate
+          </button>
+        </div>
+      )}
     </div>
   )
 }

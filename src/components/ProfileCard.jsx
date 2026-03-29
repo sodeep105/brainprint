@@ -68,20 +68,56 @@ export default function ProfileCard({ profile, onContinue, onRetake }) {
   const type = TYPES[typeKey]
   const [analogyDomain, setAnalogyDomain] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [toast, setToast] = useState(null)
   const shareCardRef = useRef(null)
 
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  async function captureCanvas() {
+    if (!shareCardRef.current) return null
+    return html2canvas(shareCardRef.current, { backgroundColor: null, scale: 2 })
+  }
+
   async function handleShare() {
-    if (!shareCardRef.current) return
     setDownloading(true)
     try {
-      const canvas = await html2canvas(shareCardRef.current, { backgroundColor: null, scale: 2 })
+      const canvas = await captureCanvas()
+      if (!canvas) return
       const link = document.createElement('a')
-      link.download = 'my-brainprint.png'
+      link.download = 'my-mindmesh.png'
       link.href = canvas.toDataURL('image/png')
       link.click()
     } finally {
       setDownloading(false)
     }
+  }
+
+  async function handleInstagram() {
+    const canvas = await captureCanvas()
+    if (!canvas) return
+    const link = document.createElement('a')
+    link.download = 'my-mindmesh.png'
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+    showToast('Image downloaded! Open Instagram and share from your gallery 📸')
+  }
+
+  function handleFacebook() {
+    const url = `https://www.facebook.com/sharer/sharer.php?u=https://mindmesh.vercel.app&quote=I'm ${type.name} on MindMesh! Discover your cognitive type 🧠`
+    window.open(url, '_blank')
+  }
+
+  function handleLinkedIn() {
+    const url = `https://www.linkedin.com/sharing/share-offsite/?url=https://mindmesh.vercel.app&summary=Just discovered I'm ${type.name} on MindMesh - a tool that reshapes information to match your cognitive style. Try it!`
+    window.open(url, '_blank')
+  }
+
+  function handleTwitter() {
+    const url = `https://twitter.com/intent/tweet?text=Just discovered I'm ${type.name} on MindMesh! 🧠✨ Find your cognitive type and transform how you learn → https://mindmesh.vercel.app %23MindMesh %23LearnDifferent`
+    window.open(url, '_blank')
   }
 
   return (
@@ -151,7 +187,7 @@ export default function ProfileCard({ profile, onContinue, onRetake }) {
 
           {/* Share subtext */}
           <p className="text-xs text-slate-600 mb-8 tracking-wide">
-            Share your type · #Brainprint
+            Share your type · #MindMesh
           </p>
 
           {/* CTA */}
@@ -167,7 +203,7 @@ export default function ProfileCard({ profile, onContinue, onRetake }) {
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-500" />
           </button>
 
-          {/* Share My Type */}
+          {/* Share My Type — download */}
           <button
             onClick={handleShare}
             disabled={downloading}
@@ -175,6 +211,38 @@ export default function ProfileCard({ profile, onContinue, onRetake }) {
           >
             {downloading ? 'Downloading...' : '🖼️ Share My Type'}
           </button>
+
+          {/* Social sharing */}
+          <div className="mt-4">
+            <p className="text-xs text-gray-500 mb-2">Share your type</p>
+            <div className="flex gap-2 flex-wrap justify-center">
+              <button
+                onClick={handleInstagram}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white transition-all"
+                style={{ background: 'linear-gradient(135deg, #7c3aed, #db2777)' }}
+              >
+                📸 Instagram
+              </button>
+              <button
+                onClick={handleFacebook}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white bg-blue-700 hover:bg-blue-600 transition-all"
+              >
+                👥 Facebook
+              </button>
+              <button
+                onClick={handleLinkedIn}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white bg-blue-600 hover:bg-blue-500 transition-all"
+              >
+                💼 LinkedIn
+              </button>
+              <button
+                onClick={handleTwitter}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 transition-all"
+              >
+                🐦 X
+              </button>
+            </div>
+          </div>
 
           {/* Retake */}
           <button
@@ -224,8 +292,14 @@ export default function ProfileCard({ profile, onContinue, onRetake }) {
         </div>
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
           <div style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 600 }}>Find your type 🧠</div>
-          <div style={{ fontSize: '11px', color: '#4a4a6a' }}>brainprint.vercel.app</div>
+          <div style={{ fontSize: '11px', color: '#4a4a6a' }}>mindmesh.vercel.app</div>
         </div>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-gray-900 border border-purple-600 text-white text-sm shadow-xl animate-fade-in">
+          {toast}
+        </div>
+      )}
       </div>
     </div>
   )

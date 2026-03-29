@@ -28,7 +28,7 @@ export default function Landing({ onStart }) {
 
         {/* App name */}
         <h1 className="text-6xl md:text-7xl font-black tracking-tight mb-4 bg-gradient-to-br from-white via-purple-100 to-purple-300 bg-clip-text text-transparent leading-tight">
-          Brainprint
+          MindMesh
         </h1>
 
         {/* Tagline */}
