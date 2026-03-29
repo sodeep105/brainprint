@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import mermaid from 'mermaid'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend,
+} from 'recharts'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const MODEL = 'llama-3.3-70b-versatile'
@@ -46,11 +50,6 @@ async function groqCall(systemPrompt, userContent) {
 
 mermaid.initialize({ startOnLoad: false, theme: 'dark', themeVariables: { darkMode: true, background: '#1a1a1a', primaryColor: '#7c3aed', primaryTextColor: '#e2e8f0', lineColor: '#7c3aed', secondaryColor: '#1f1a2e', tertiaryColor: '#0f0f0f' } })
 
-const generateImageUrl = (text, learnerType) => {
-  const cleanText = text.replace(/[^\w\s]/g, '').slice(0, 60).trim()
-  const prompt = `Educational infographic about ${cleanText}, ${learnerType} learning style, flat design, dark background, purple accents, minimal, no text`
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=350&nologo=true&seed=${Date.now()}`
-}
 
 function MermaidDiagram({ code }) {
   const ref = useRef(null)
@@ -144,7 +143,14 @@ export default function Transformer({ profile, analogyDomain, onBack }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [takeaways, setTakeaways] = useState(null) // null | 'loading' | string[]
   const [conceptMapCode, setConceptMapCode] = useState(null) // null | 'loading' | string
+  const [conceptsData, setConceptsData] = useState(null)   // null | 'loading' | array
+  const [segmentsData, setSegmentsData] = useState(null)   // null | 'loading' | array
+  const [dyslexiaMode, setDyslexiaMode] = useState(() => localStorage.getItem('dyslexiaMode') === 'true')
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    localStorage.setItem('dyslexiaMode', dyslexiaMode)
+  }, [dyslexiaMode])
 
   async function handleFileUpload(e) {
     const file = e.target.files?.[0]
@@ -177,6 +183,8 @@ export default function Transformer({ profile, analogyDomain, onBack }) {
     setDiagramCode('')
     setTakeaways('loading')
     setConceptMapCode(null)
+    setConceptsData(null)
+    setSegmentsData(null)
     setError('')
     setView('transformed')
 
@@ -245,18 +253,41 @@ Return only the transformed content — no preamble, no meta-commentary.`
 
       setStatus('done')
 
-      // Visual-only enrichment — runs after text is shown, in parallel
+      // Visual-only enrichment — all 3 calls fire in parallel after text renders
       if (profile.modality === 'visual') {
         const cleanText = transformedRaw.replace(/\[DIAGRAM:[\s\S]*?\]/gi, '').replace(/[#*\[\]`]/g, '').trim()
         setConceptMapCode('loading')
-        groqCall(
-          'You are a diagram generator.',
-          `Convert the key concepts and their relationships from this content into a Mermaid.js flowchart. Use LR direction. Max 8 nodes. Keep labels short (under 4 words). Return ONLY valid mermaid syntax starting with 'flowchart LR', nothing else, no backticks, no explanation:\n${cleanText}`
-        ).then(code => {
-          setConceptMapCode(code.replace(/```mermaid?/gi, '').replace(/```/g, '').trim())
-        }).catch(() => {
-          setConceptMapCode(null) // hide silently on failure
-        })
+        setConceptsData('loading')
+        setSegmentsData('loading')
+
+        Promise.all([
+          groqCall(
+            'You are a diagram generator. Return ONLY valid mermaid flowchart syntax, no backticks, no explanation.',
+            `Create a mermaid.js flowchart LR showing the key concepts from this text and how they relate to each other. Max 8 nodes. Node labels max 3 words. Use these shapes: rectangles for main concepts, rounded rectangles for supporting ideas.\nText: ${cleanText}`
+          ).then(code => {
+            setConceptMapCode(code.replace(/```mermaid?/gi, '').replace(/```/g, '').trim())
+          }).catch(() => setConceptMapCode(null)),
+
+          groqCall(
+            'Return JSON only, no markdown, no backticks.',
+            `Extract the 5-7 most important concepts from this text. For each give an importance score 1-10 based on how central it is to understanding the content. Return: { "concepts": [{"name": "string (max 3 words)", "score": number}] }\nText: ${cleanText}`
+          ).then(raw => {
+            try {
+              const parsed = JSON.parse(raw.replace(/```json?/gi, '').replace(/```/g, '').trim())
+              setConceptsData(parsed.concepts ?? [])
+            } catch { setConceptsData([]) }
+          }).catch(() => setConceptsData([])),
+
+          groqCall(
+            'Return JSON only, no markdown, no backticks.',
+            `Analyze this text and break it into its main structural components with percentage of content dedicated to each. Examples: Background, Core Concept, Evidence, Examples, Implications, Methodology — use whatever fits this specific text. Return: { "segments": [{"label": "string", "percentage": number}] } Percentages must sum to 100.\nText: ${cleanText}`
+          ).then(raw => {
+            try {
+              const parsed = JSON.parse(raw.replace(/```json?/gi, '').replace(/```/g, '').trim())
+              setSegmentsData(parsed.segments ?? [])
+            } catch { setSegmentsData([]) }
+          }).catch(() => setSegmentsData([])),
+        ])
       }
     } catch (e) {
       setError(e.message)
@@ -391,11 +422,30 @@ Return only the transformed content — no preamble, no meta-commentary.`
               {view === 'transformed' ? (
                 <>
                   <KeyTakeaways takeaways={takeaways} learnerType={TYPE_NAMES[typeKey]} />
-                  <WordCountBadge original={input} transformed={displayTransformed} />
-                  <div
-                    className="transformed-content text-sm"
-                    dangerouslySetInnerHTML={{ __html: markdownToHtml(displayTransformed) }}
-                  />
+
+                  {/* Badge row + dyslexia toggle */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <WordCountBadge original={input} transformed={displayTransformed} />
+                    <button
+                      onClick={() => setDyslexiaMode(m => !m)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-all border ${
+                        dyslexiaMode
+                          ? 'border-green-500 text-green-400 bg-green-950'
+                          : 'border-gray-600 text-gray-400 bg-transparent'
+                      }`}
+                    >
+                      {dyslexiaMode ? '✓ Dyslexia Mode Active' : '🔡 Dyslexia-Friendly Mode'}
+                    </button>
+                    {/* Tooltip */}
+                    <div className="relative group">
+                      <span className="text-gray-500 text-sm cursor-default select-none">ⓘ</span>
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-xs text-gray-300 leading-relaxed pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        Optimized typography for dyslexic readers: OpenDyslexic font, wider spacing, shorter lines, line focus mode
+                      </div>
+                    </div>
+                  </div>
+
+                  <DyslexiaContent html={markdownToHtml(displayTransformed)} dyslexiaMode={dyslexiaMode} />
                   {diagramCode && (
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">Generated Diagram</p>
@@ -403,10 +453,11 @@ Return only the transformed content — no preamble, no meta-commentary.`
                     </div>
                   )}
                   {profile.modality === 'visual' && (
-                    <>
-                      <ConceptMap code={conceptMapCode} />
-                      <VisualImageSection transformedText={displayTransformed} learnerType={TYPE_NAMES[typeKey]} />
-                    </>
+                    <VisualCharts
+                      conceptMapCode={conceptMapCode}
+                      conceptsData={conceptsData}
+                      segmentsData={segmentsData}
+                    />
                   )}
                 </>
               ) : (
@@ -484,72 +535,132 @@ function WordCountBadge({ original, transformed }) {
   )
 }
 
-/* ── Visual-only: Concept Map ───────────────────────────────── */
-function ConceptMap({ code }) {
-  if (!code) return null
+/* ── Visual-only: Charts (Concept Map + Bar + Pie) ──────────── */
+const PIE_COLORS = ['#7c3aed','#a78bfa','#4c1d95','#6d28d9','#8b5cf6','#5b21b6']
 
-  if (code === 'loading') return (
-    <div>
-      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🗺️ Concept Map</p>
-      <div className="w-full h-[180px] rounded-xl bg-[#1a1a1a] animate-pulse" />
-    </div>
-  )
-
+function VisualCharts({ conceptMapCode, conceptsData, segmentsData }) {
   return (
-    <div>
-      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🗺️ Concept Map</p>
-      <MermaidDiagram code={code} />
+    <div className="space-y-6">
+
+      {/* 1 — Concept Map */}
+      {conceptMapCode && (
+        <div className="mb-6">
+          <p className="text-sm text-gray-400 mb-2">🗺️ Concept Map</p>
+          {conceptMapCode === 'loading'
+            ? <div className="w-full h-[180px] rounded-xl bg-gray-900 animate-pulse" />
+            : <div className="bg-gray-900 rounded-xl p-4"><MermaidDiagram code={conceptMapCode} /></div>
+          }
+        </div>
+      )}
+
+      {/* 2 — Concept Importance Bar Chart */}
+      {conceptsData && conceptsData.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm text-gray-400 mb-2">📊 Concept Importance</p>
+          <div className="bg-gray-900 rounded-xl p-4">
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={conceptsData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                <XAxis type="number" domain={[0, 10]} stroke="#6b7280" tick={{ fill: '#6b7280' }} />
+                <YAxis type="category" dataKey="name" stroke="#6b7280" tick={{ fill: '#d1d5db' }} width={100} />
+                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #7c3aed' }} labelStyle={{ color: '#d1d5db' }} />
+                <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+                  {conceptsData.map((entry, index) => (
+                    <Cell key={index} fill={entry.score >= 8 ? '#7c3aed' : entry.score >= 5 ? '#a78bfa' : '#4c1d95'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {conceptsData === 'loading' && (
+        <div className="mb-6">
+          <p className="text-sm text-gray-400 mb-2">📊 Concept Importance</p>
+          <div className="w-full h-[250px] rounded-xl bg-gray-900 animate-pulse" />
+        </div>
+      )}
+
+      {/* 3 — Content Structure Pie Chart */}
+      {segmentsData && segmentsData.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm text-gray-400 mb-2">🥧 Content Breakdown</p>
+          <div className="bg-gray-900 rounded-xl p-4">
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie data={segmentsData} dataKey="percentage" nameKey="label" cx="50%" cy="50%" outerRadius={100} innerRadius={50} paddingAngle={3}>
+                  {segmentsData.map((_, index) => (
+                    <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => `${value}%`} contentStyle={{ background: '#1a1a1a', border: '1px solid #7c3aed' }} />
+                <Legend wrapperStyle={{ color: '#d1d5db', fontSize: '12px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {segmentsData === 'loading' && (
+        <div className="mb-6">
+          <p className="text-sm text-gray-400 mb-2">🥧 Content Breakdown</p>
+          <div className="w-full h-[280px] rounded-xl bg-gray-900 animate-pulse" />
+        </div>
+      )}
+
     </div>
   )
 }
 
-/* ── Visual-only: Pollinations image ────────────────────────── */
-function VisualImageSection({ transformedText, learnerType }) {
-  const [imageUrl, setImageUrl] = useState(null)
-  const [imageLoading, setImageLoading] = useState(false)
-  const [imageError, setImageError] = useState(false)
+/* ── Dyslexia-friendly content renderer ─────────────────────── */
+function DyslexiaContent({ html, dyslexiaMode }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null)
 
-  useEffect(() => {
-    if (transformedText && transformedText.length > 0) {
-      setImageLoading(true)
-      setImageError(false)
-      setImageUrl(generateImageUrl(transformedText, learnerType))
-    }
-  }, [transformedText])
-
-  function handleRegenerate() {
-    setImageLoading(true)
-    setImageError(false)
-    setImageUrl(generateImageUrl(transformedText, learnerType) + '&seed=' + Date.now())
+  if (!dyslexiaMode) {
+    return (
+      <div
+        className="transformed-content text-sm"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    )
   }
 
-  if (!transformedText) return null
+  // Chunk plain text into ≤3-sentence paragraphs
+  const plainText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  const sentences = plainText.split(/(?<=\.)\s+/)
+  const chunks = []
+  for (let i = 0; i < sentences.length; i += 3) {
+    chunks.push(sentences.slice(i, i + 3).join(' '))
+  }
 
   return (
-    <div>
-      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">🎨 Visual Summary</p>
-      {imageLoading && !imageError && (
-        <div className="w-full h-48 bg-gray-800 rounded-xl animate-pulse flex items-center justify-center">
-          <span className="text-gray-500 text-sm">🎨 Generating visual summary...</span>
-        </div>
-      )}
-      {imageUrl && !imageError && (
-        <div>
-          <img
-            src={imageUrl}
-            alt="Visual summary"
-            className="rounded-xl w-full"
-            onLoad={() => setImageLoading(false)}
-            onError={() => { setImageError(true); setImageLoading(false) }}
-          />
-          <button
-            onClick={handleRegenerate}
-            className="mt-2 px-3 py-1.5 rounded-lg text-sm text-purple-400 border border-purple-600 hover:bg-purple-950 transition-colors"
-          >
-            🔄 Regenerate
-          </button>
-        </div>
-      )}
+    <div
+      style={{
+        background: '#0a0a0a',
+        color: '#f5f5f5',
+        borderRadius: '12px',
+        padding: '20px',
+        fontFamily: "'OpenDyslexic', 'Comic Sans MS', sans-serif",
+        wordSpacing: '0.3em',
+        lineHeight: '2',
+        letterSpacing: '0.05em',
+        maxWidth: '65ch',
+      }}
+    >
+      {chunks.map((chunk, i) => (
+        <p
+          key={i}
+          onMouseEnter={() => setHoveredIdx(i)}
+          onMouseLeave={() => setHoveredIdx(null)}
+          style={{
+            marginBottom: '1.2em',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            background: hoveredIdx === i ? 'rgba(76,29,149,0.35)' : 'transparent',
+            transition: 'background 0.15s',
+          }}
+        >
+          {chunk}
+        </p>
+      ))}
     </div>
   )
 }
